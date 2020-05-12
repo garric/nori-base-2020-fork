@@ -1,0 +1,7 @@
+* 以下文件不需要提交
+
+*CMake生成目录
+/build/
+
+*ext依赖项,通过 git clone -recursive <repo url> 来更新所有的ext选项
+/ext/
