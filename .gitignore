@@ -5,3 +5,6 @@
 
 *ext依赖项,通过 git clone -recursive <repo url> 来更新所有的ext选项
 /ext/
+
+*vs临时文件目录
+/.vs/

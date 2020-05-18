@@ -31,6 +31,9 @@
 #include <filesystem/resolver.h>
 #include <thread>
 
+// https://stackoverflow.com/questions/298510/how-to-get-the-current-directory-in-a-c-program
+#include <direct.h>
+
 using namespace nori;
 
 static int threadCount = -1;
@@ -152,12 +155,23 @@ static void render(Scene *scene, const std::string &filename) {
     bitmap->savePNG(outputName);
 }
 
+void printCurrentWorkDirectory()
+{
+    // https://stackoverflow.com/questions/298510/how-to-get-the-current-directory-in-a-c-program
+    char bufferCWD[256];
+    char *val = _getcwd(bufferCWD, sizeof(bufferCWD));
+    if (val) {
+        std::cout << bufferCWD << std::endl;
+    }
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         cerr << "Syntax: " << argv[0] << " <scene.xml>" << endl;
         return -1;
     }
 
+    printCurrentWorkDirectory();
     std::string sceneName = "";
 
     for (int i = 1; i < argc; ++i) {
