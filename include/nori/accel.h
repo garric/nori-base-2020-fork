@@ -39,7 +39,7 @@ public:
     void addMesh(Mesh *mesh);
 
     /// Build the acceleration data structure (currently a no-op)
-    void build();
+    virtual void build();
 
     /// Return an axis-aligned box that bounds the scene
     const BoundingBox3f &getBoundingBox() const { return m_bbox; }
@@ -63,9 +63,9 @@ public:
      *
      * \return \c true if an intersection was found
      */
-    bool rayIntersect(const Ray3f &ray, Intersection &its, bool shadowRay) const;
+    virtual bool rayIntersect(const Ray3f &ray, Intersection &its, bool shadowRay) const;
 
-private:
+protected:
     Mesh         *m_mesh = nullptr; ///< Mesh (only a single one for now)
     BoundingBox3f m_bbox;           ///< Bounding box of the entire scene
 };

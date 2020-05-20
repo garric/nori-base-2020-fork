@@ -8,3 +8,6 @@
 
 *vs临时文件目录
 /.vs/
+
+*scene下载文件
+/scenes/pa2/ajax.obj

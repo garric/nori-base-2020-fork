@@ -271,6 +271,17 @@ template <typename _PointType> struct TBoundingBox {
         max = max.cwiseMin(bbox.max);
     }
 
+    /// Clip to another bounding box with min and max
+    void clip(const Point3f& refMin, const Point3f& refMax) {
+        min = min.cwiseMax(refMin);
+        max = max.cwiseMin(refMax);
+    }
+
+    void set(const Point3f& refMin, const Point3f& refMax) {
+        min = refMin;
+        max = refMax;
+    }
+
     /** 
      * \brief Mark the bounding box as invalid.
      * 

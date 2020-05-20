@@ -97,6 +97,9 @@ public:
     //// Return the centroid of the given triangle
     Point3f getCentroid(uint32_t index) const;
 
+    /// fill vertices of given triangle
+    void getTriangleVertices(uint32_t index, Point3f& p0, Point3f& p1, Point3f& p2) const;
+
     /** \brief Ray-triangle intersection test
      *
      * Uses the algorithm by Moeller and Trumbore discussed at

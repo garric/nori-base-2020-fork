@@ -19,6 +19,7 @@
 #pragma once
 
 #include <nori/accel.h>
+#include <nori/octree.h>
 
 NORI_NAMESPACE_BEGIN
 
