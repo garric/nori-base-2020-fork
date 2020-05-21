@@ -22,6 +22,13 @@ enum OCTreeFace {
     RightBottomInner,
 };
 
+
+enum OCTreeTraversal
+{
+    EachNode,
+    OrderedNodeByDistance,
+};
+
 struct Triangle
 {
 public:
@@ -83,6 +90,19 @@ public:
     std::vector<Triangle*>* triangles;
 };
 
+struct OCTreeNodeDistance
+{
+    int index;
+    float distance;
+};
+
+struct OCTreeNodeDistanceSort
+{
+    bool operator()(OCTreeNodeDistance left, OCTreeNodeDistance right) const {
+        return left.distance < right.distance;
+    }
+} ocTreeNodeDistanceSort;
+
 BoundingBox3f bboxInfinite(Point3f(-distanceInfinite, -distanceInfinite, -distanceInfinite), Point3f(distanceInfinite, distanceInfinite, distanceInfinite));
 BoundingBox3f bboxTemp = bboxInfinite;
 
@@ -90,6 +110,8 @@ uint32_t countInteriorNode = 0;
 uint32_t countLeafNode = 0;
 uint32_t trianglesInLeafNodes = 0;
 float averageTrianglesInLeafNodes = 0.0f;
+
+OCTreeTraversal traversal = OCTreeTraversal::EachNode;
 
 BoundingBox3f getBoundingBox(BoundingBox3f& bbox, int face)
 {
@@ -240,7 +262,7 @@ void AccelOCTree::build()
     std::cout << "\n" << countInteriorNode << ", " << countLeafNode << ", " << trianglesInLeafNodes << ", " << averageTrianglesInLeafNodes;
 }
 
-bool rayIntersectRecursively(Mesh* mesh, OCTreeNode* node, Ray3f &ray, Intersection &its, uint32_t& faceIndex, bool shadowRay)
+bool rayIntersectRecursivelyUnorder(Mesh* mesh, OCTreeNode* node, Ray3f &ray, Intersection &its, uint32_t& faceIndex, bool shadowRay)
 {
     if (!node->bbox.rayIntersect(ray))
         return false;
@@ -277,7 +299,86 @@ bool rayIntersectRecursively(Mesh* mesh, OCTreeNode* node, Ray3f &ray, Intersect
         if (child == NULL)
             continue;
 
-        if (!rayIntersectRecursively(mesh, child, ray, its, faceIndex, shadowRay))
+        if (!rayIntersectRecursivelyUnorder(mesh, child, ray, its, faceIndex, shadowRay))
+            continue;
+        foundIntersection = true;
+
+        if (shadowRay)
+            return true;
+    }
+
+    return foundIntersection;
+}
+
+bool rayIntersectRecursivelyInOrder(Mesh* mesh, OCTreeNode* node, Ray3f &ray, Intersection &its, uint32_t& faceIndex, bool shadowRay)
+{
+    if (!node->bbox.rayIntersect(ray))
+        return false;
+
+    bool foundIntersection = false;  // Was an intersection found so far?
+
+    // leaf node
+    if (node->triangles != nullptr)
+    {
+        for (auto iterator = node->triangles->begin(); iterator != node->triangles->end(); iterator++)
+        {
+            uint32_t index = (*iterator)->index;
+            float u, v, t;
+            //countRayIntersect++;
+            if (mesh->rayIntersect(index, ray, u, v, t))
+            {
+                if (shadowRay)
+                    return true;
+
+                ray.maxt = its.t = t; // make next intersection is closer than maxt
+                its.uv = Point2f(u, v);
+                its.mesh = mesh;
+
+                faceIndex = index;
+                foundIntersection = true;
+            }
+        }
+        return foundIntersection;
+    }
+
+    // interior node
+    //// https://www.cnblogs.com/lizhenghao126/p/11053598.html
+    //// https://cloud.tencent.com/developer/ask/34249
+    //// 1. sort child node by distance from ray to intersection
+    OCTreeNodeDistance distances[OCTREE_CHILD_COUNT];
+    for (int i = 0; i < OCTREE_CHILD_COUNT; i++)
+    {
+        distances[i].index = i;
+
+        OCTreeNode* child = node->childs[i];
+        if (child != nullptr)
+        {
+            //countRayIntersect++;
+            float near, far;
+            if (child->bbox.rayIntersect(ray, near, far))
+                distances[i].distance = near; // why near can be negative value???
+            else
+                distances[i].distance = FLT_MAX;
+        }
+        else
+            distances[i].distance = FLT_MAX;
+    }
+    //std::sort(distances, distances + OCTREE_CHILD_COUNT, [&](OCTreeNodeDistance left, OCTreeNodeDistance right){
+    //    return left.distance < right.distance;
+    //});
+    std::sort(distances, distances + OCTREE_CHILD_COUNT, ocTreeNodeDistanceSort);
+
+    // 2. ray traversal
+    for (int i = 0; i < OCTREE_CHILD_COUNT; i++)
+    {
+        OCTreeNodeDistance distance = distances[i];
+
+        OCTreeNode* child = node->childs[distance.index];
+        
+        if (distance.distance > ray.maxt)
+            return foundIntersection;
+        
+        if (!rayIntersectRecursivelyInOrder(mesh, child, ray, its, faceIndex, shadowRay))
             continue;
         foundIntersection = true;
 
@@ -294,7 +395,13 @@ bool AccelOCTree::rayIntersect(const Ray3f &ray_, Intersection &its, bool shadow
 
     uint32_t faceIndex = (uint32_t)-1;
     Ray3f ray(ray_); /// Make a copy of the ray (we will need to update its '.maxt' value)
-    if (rayIntersectRecursively(m_mesh, rootNode, ray, its, faceIndex, shadowRay))
+    bool intersected = false;
+    if (traversal == OCTreeTraversal::EachNode)
+        intersected = rayIntersectRecursivelyUnorder(m_mesh, rootNode, ray, its, faceIndex, shadowRay);
+    else if (traversal == OCTreeTraversal::OrderedNodeByDistance)
+        intersected = rayIntersectRecursivelyInOrder(m_mesh, rootNode, ray, its, faceIndex, shadowRay);
+
+    if (intersected)
     {
         if (shadowRay)
             return true;

@@ -1,3 +1,5 @@
+#pragma once
+
 #include <nori/accel.h>
 #include <nori/mesh.h>
 
