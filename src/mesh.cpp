@@ -102,9 +102,9 @@ Point3f Mesh::getCentroid(uint32_t index) const {
 }
 
 void Mesh::getTriangleVertices(uint32_t index, Point3f& p0, Point3f& p1, Point3f& p2) const {
-    p0 = m_V(m_F(0, index));
-    p1 = m_V(m_F(1, index));
-    p2 = m_V(m_F(2, index));
+    p0 = m_V.col(m_F(0, index));
+    p1 = m_V.col(m_F(1, index));
+    p2 = m_V.col(m_F(2, index));
 }
 
 void Mesh::addChild(NoriObject *obj) {

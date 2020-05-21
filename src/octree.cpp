@@ -8,7 +8,8 @@ NORI_NAMESPACE_BEGIN
 
 const int OCTREE_CHILD_COUNT = 8;
 const int OCTREE_LEAF_TRIANGLES = 10;
-const float OCTREE_LEAF_MINBOUNDWIDTH = 1.0f / 32.0f;// 2.0f;
+const float_t OCTREE_LEAF_MINBOUNDWIDTH = 1.0f / 32.f; //1.0f / 256.0f;// 2.0f;
+float_t distanceInfinite = 64; //0.25f;// 1 << 16; // FLT_MAX / 2 - 100;
 
 enum OCTreeFace {
     LeftBottomOuter,
@@ -24,26 +25,29 @@ enum OCTreeFace {
 struct Triangle
 {
 public:
-    bool overlaps(BoundingBox3f& bbox)
+    bool overlaps(Mesh* mesh, BoundingBox3f& bbox)
     {
-        tempBoundingBox3f.set(p0, p0);
-        tempBoundingBox3f.expandBy(p1);
-        tempBoundingBox3f.expandBy(p2);
+        mesh->getTriangleVertices(index, tempPoint0, tempPoint1, tempPoint2);
+        tempBoundingBox3f.set(tempPoint0, tempPoint0);
+        tempBoundingBox3f.expandBy(tempPoint1);
+        tempBoundingBox3f.expandBy(tempPoint2);
         
         return bbox.overlaps(tempBoundingBox3f);
     }
 
 public:
-    Point3f p0;
-    Point3f p1;
-    Point3f p2;
-
     uint32_t index;
 
 private:
+    static Point3f tempPoint0;
+    static Point3f tempPoint1;
+    static Point3f tempPoint2;
     static BoundingBox3f tempBoundingBox3f;
 };
 
+Point3f Triangle::tempPoint0;
+Point3f Triangle::tempPoint1;
+Point3f Triangle::tempPoint2;
 BoundingBox3f Triangle::tempBoundingBox3f;
 
 class OCTreeNode
@@ -51,12 +55,12 @@ class OCTreeNode
 public:
     OCTreeNode()
     {
-        parent = nullptr;
         for (int i = 0; i < OCTREE_CHILD_COUNT; i++)
         {
             childs[i] = nullptr;
         }
         bbox.reset();
+        triangles = nullptr;
     }
 
     ~OCTreeNode()
@@ -65,7 +69,6 @@ public:
     }
 
 public:
-    OCTreeNode* parent;
     OCTreeNode* childs[OCTREE_CHILD_COUNT];
 
     BoundingBox3f bbox;
@@ -80,9 +83,13 @@ public:
     std::vector<Triangle*>* triangles;
 };
 
-float_t distanceInfinite = 0.25f;// 1 << 16; // FLT_MAX / 2 - 100;
 BoundingBox3f bboxInfinite(Point3f(-distanceInfinite, -distanceInfinite, -distanceInfinite), Point3f(distanceInfinite, distanceInfinite, distanceInfinite));
 BoundingBox3f bboxTemp = bboxInfinite;
+
+uint32_t countInteriorNode = 0;
+uint32_t countLeafNode = 0;
+uint32_t trianglesInLeafNodes = 0;
+float averageTrianglesInLeafNodes = 0.0f;
 
 BoundingBox3f getBoundingBox(BoundingBox3f& bbox, int face)
 {
@@ -152,7 +159,7 @@ bool needTerminate(BoundingBox3f& bbox, std::vector<Triangle*>* triangles)
     return false;
 }
 
-OCTreeNode* buildRecursively(BoundingBox3f& bbox, std::vector<Triangle*>* triangles)
+OCTreeNode* buildRecursively(Mesh* mesh, BoundingBox3f& bbox, std::vector<Triangle*>* triangles)
 {
     if (needTerminate(bbox, triangles))
     {
@@ -164,6 +171,9 @@ OCTreeNode* buildRecursively(BoundingBox3f& bbox, std::vector<Triangle*>* triang
             for (auto iterator = triangles->begin(); iterator != triangles->end(); iterator++)
                 nodeLeaf->triangles->push_back(*iterator);
             
+            countLeafNode++;
+            trianglesInLeafNodes += (uint32_t)triangleCount;
+
             return nodeLeaf;
         }
         else
@@ -180,7 +190,7 @@ OCTreeNode* buildRecursively(BoundingBox3f& bbox, std::vector<Triangle*>* triang
         for (int i = 0; i < OCTREE_CHILD_COUNT; i++)
         {
             BoundingBox3f bboxChild = getBoundingBox(bbox, i);
-            if (triangle->overlaps(bboxChild))
+            if (triangle->overlaps(mesh, bboxChild))
             {
                 splitedTriangles[i].push_back(triangle);
             }
@@ -192,15 +202,15 @@ OCTreeNode* buildRecursively(BoundingBox3f& bbox, std::vector<Triangle*>* triang
     for (int i = 0; i < OCTREE_CHILD_COUNT; i++)
     {
         BoundingBox3f bboxChild = getBoundingBox(bbox, i);
-        OCTreeNode* child = buildRecursively(bboxChild, &splitedTriangles[i]);
+        OCTreeNode* child = buildRecursively(mesh, bboxChild, &splitedTriangles[i]);
         if (child == nullptr)
             continue;
 
-        child->parent = node;
         node->childs[i] = child;
 
         child->bbox = bboxChild;
     }
+    countInteriorNode++;
     return node;
 }
 
@@ -211,27 +221,90 @@ AccelOCTree::~AccelOCTree()
 
 void AccelOCTree::build()
 {
-    Accel::build();
+    //Accel::build();
     // build an octree
 
     std::vector<Triangle*> triangles;
     //std::vector<Triangle> triangles;
     for (uint32_t idx = 0; idx < m_mesh->getTriangleCount(); ++idx) {
         Triangle* triangle = new Triangle();
-        m_mesh->getTriangleVertices(idx, triangle->p0, triangle->p1, triangle->p2);
         triangle->index = idx;
 
         triangles.push_back(triangle);
     }
     //Point3f extents = m_mesh->getBoundingBox().getExtents();
     BoundingBox3f bbox = bboxInfinite; // default is infinite Bounding Box
-    rootNode = buildRecursively(bbox, &triangles);
+    rootNode = buildRecursively(m_mesh, bbox, &triangles);
     rootNode->bbox = bbox;
-    int a = 0;
+    averageTrianglesInLeafNodes = (float)trianglesInLeafNodes / countLeafNode;
+    std::cout << "\n" << countInteriorNode << ", " << countLeafNode << ", " << trianglesInLeafNodes << ", " << averageTrianglesInLeafNodes;
 }
 
-bool AccelOCTree::rayIntersect(const Ray3f &ray, Intersection &its, bool shadowRay) const
+bool rayIntersectRecursively(Mesh* mesh, OCTreeNode* node, Ray3f &ray, Intersection &its, uint32_t& faceIndex, bool shadowRay)
 {
-    return Accel::rayIntersect(ray, its, shadowRay);
+    if (!node->bbox.rayIntersect(ray))
+        return false;
+
+    bool foundIntersection = false;  // Was an intersection found so far?
+
+    // leaf node
+    if (node->triangles != nullptr)
+    {
+        for (auto iterator = node->triangles->begin(); iterator != node->triangles->end(); iterator++)
+        {
+            uint32_t index = (*iterator)->index;
+            float u, v, t;
+            if (mesh->rayIntersect(index, ray, u, v, t))
+            {
+                if (shadowRay)
+                    return true;
+                
+                ray.maxt = its.t = t; // make next intersection is closer than maxt
+                its.uv = Point2f(u, v);
+                its.mesh = mesh;
+
+                faceIndex = index;
+                foundIntersection = true;
+            }
+        }
+        return foundIntersection;
+    }
+
+    // interior node
+    for (int i = 0; i < OCTREE_CHILD_COUNT; i++)
+    {
+        OCTreeNode* child = node->childs[i];
+        if (child == NULL)
+            continue;
+
+        if (!rayIntersectRecursively(mesh, child, ray, its, faceIndex, shadowRay))
+            continue;
+        foundIntersection = true;
+
+        if (shadowRay)
+            return true;
+    }
+
+    return foundIntersection;
+}
+
+bool AccelOCTree::rayIntersect(const Ray3f &ray_, Intersection &its, bool shadowRay) const
+{
+    //return Accel::rayIntersect(ray_, its, shadowRay);
+
+    uint32_t faceIndex = (uint32_t)-1;
+    Ray3f ray(ray_); /// Make a copy of the ray (we will need to update its '.maxt' value)
+    if (rayIntersectRecursively(m_mesh, rootNode, ray, its, faceIndex, shadowRay))
+    {
+        if (shadowRay)
+            return true;
+
+        calcIntersection(its, faceIndex);
+        return true;
+    }
+    else
+    {
+        return false;
+    }
 }
 NORI_NAMESPACE_END

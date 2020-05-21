@@ -64,6 +64,8 @@ public:
      * \return \c true if an intersection was found
      */
     virtual bool rayIntersect(const Ray3f &ray, Intersection &its, bool shadowRay) const;
+    
+    virtual void calcIntersection(Intersection& its, uint32_t f) const;
 
 protected:
     Mesh         *m_mesh = nullptr; ///< Mesh (only a single one for now)
